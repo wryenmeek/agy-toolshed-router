@@ -174,6 +174,9 @@ test('resolves AGY model policies and attaches 1M picker aliases', () => {
 test('translates chat conversation to agy prompt and streams agy CLI events', () => {
   const prompt = agy.buildAgyPrompt({
     system: 'You are an expert coder.',
+    tools: [
+      { name: 'calculator', description: 'Evaluate math', input_schema: { type: 'object', properties: { expr: { type: 'string' } } } },
+    ],
     messages: [
       { role: 'user', content: 'hello' },
       { role: 'assistant', content: 'hi there' },
@@ -182,6 +185,8 @@ test('translates chat conversation to agy prompt and streams agy CLI events', ()
   });
 
   assert.match(prompt, /\[System Instructions\]\nYou are an expert coder\./);
+  assert.match(prompt, /\[Available Tools \(JSON Schema\)\]/);
+  assert.match(prompt, /Tool: calculator/);
   assert.match(prompt, /User: hello/);
   assert.match(prompt, /Assistant: hi there/);
   assert.match(prompt, /User: what is 2\+2\?/);
@@ -204,7 +209,15 @@ test('translates chat conversation to agy prompt and streams agy CLI events', ()
       step_type: 'agent_response',
       text_delta: '\n',
       state: 'DONE',
-      usage: { input_tokens: 10, output_tokens: 2, thinking_tokens: 0 },
+    },
+  });
+
+  transformer.event({
+    event: 'result',
+    result: {
+      status: 'SUCCESS',
+      response: '4\n',
+      usage: { input_tokens: 15, output_tokens: 3, thinking_tokens: 0 },
     },
   });
 
@@ -215,6 +228,8 @@ test('translates chat conversation to agy prompt and streams agy CLI events', ()
   assert.match(frames[3], /"text_delta","text":"\\n"/);
   assert.match(frames[4], /"type":"content_block_stop"/);
   assert.match(frames[5], /"type":"message_delta"/);
+  assert.match(frames[5], /"input_tokens":15/);
+  assert.match(frames[5], /"output_tokens":3/);
   assert.match(frames[6], /"type":"message_stop"/);
 });
 
