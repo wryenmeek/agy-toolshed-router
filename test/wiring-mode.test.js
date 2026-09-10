@@ -13,7 +13,8 @@ const DEFAULT_BASE_URL = 'http://127.0.0.1:9';
 const COMPAT_BASE_URL = 'http://api.anthropic.com';
 
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'model-gateway-wiring-'));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'model-gateway-wiring-'));
+  const root = fs.realpathSync.native(tempDir);
   const home = path.join(root, 'home');
   const project = path.join(root, 'project');
   fs.mkdirSync(home, { recursive: true });
