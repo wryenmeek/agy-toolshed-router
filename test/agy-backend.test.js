@@ -171,3 +171,50 @@ test('resolves AGY model policies and attaches 1M picker aliases', () => {
   assert.equal(future.pickerAlias, 'claude-agy-gemini-future-4.0[1m]');
 });
 
+test('translates chat conversation to agy prompt and streams agy CLI events', () => {
+  const prompt = agy.buildAgyPrompt({
+    system: 'You are an expert coder.',
+    messages: [
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'hi there' },
+      { role: 'user', content: [{ type: 'text', text: 'what is 2+2?' }] },
+    ],
+  });
+
+  assert.match(prompt, /\[System Instructions\]\nYou are an expert coder\./);
+  assert.match(prompt, /User: hello/);
+  assert.match(prompt, /Assistant: hi there/);
+  assert.match(prompt, /User: what is 2\+2\?/);
+
+  const frames = [];
+  const transformer = agy.createAgyCliStreamTransformer((f) => frames.push(f), 'claude-agy-gemini-3.6-flash[1m]');
+
+  transformer.event({
+    event: 'step_update',
+    step_update: {
+      step_type: 'agent_response',
+      text_delta: '4',
+      state: 'ACTIVE',
+    },
+  });
+
+  transformer.event({
+    event: 'step_update',
+    step_update: {
+      step_type: 'agent_response',
+      text_delta: '\n',
+      state: 'DONE',
+      usage: { input_tokens: 10, output_tokens: 2, thinking_tokens: 0 },
+    },
+  });
+
+  assert.equal(frames.length, 7);
+  assert.match(frames[0], /"type":"message_start"/);
+  assert.match(frames[1], /"type":"content_block_start"/);
+  assert.match(frames[2], /"text_delta","text":"4"/);
+  assert.match(frames[3], /"text_delta","text":"\\n"/);
+  assert.match(frames[4], /"type":"content_block_stop"/);
+  assert.match(frames[5], /"type":"message_delta"/);
+  assert.match(frames[6], /"type":"message_stop"/);
+});
+
