@@ -70,9 +70,13 @@ function installProxyStub(home) {
   const proxyBinary = path.join(home, '.claude', 'model-gateway', 'bin', process.platform === 'win32' ? 'claude-code-proxy.exe' : 'claude-code-proxy');
   fs.mkdirSync(path.dirname(proxyBinary), { recursive: true });
   try {
-    fs.linkSync(process.execPath, proxyBinary);
+    fs.symlinkSync(process.execPath, proxyBinary);
   } catch {
-    fs.copyFileSync(process.execPath, proxyBinary);
+    try {
+      fs.linkSync(process.execPath, proxyBinary);
+    } catch {
+      fs.copyFileSync(process.execPath, proxyBinary);
+    }
   }
   return proxyBinary;
 }
@@ -216,6 +220,9 @@ test('refreshModels writes the configured gateway discovery cache', async (testC
   assert.deepEqual(discoveryCache.models, [
     { id: 'claude-gpt-6-astra[1m]', display_name: 'GPT-6-astra (Codex)' },
     { id: 'claude-grok-4.5[1m]', display_name: 'Grok 4.5' },
+    { id: 'claude-agy-gemini-3.6-flash[1m]', display_name: 'Gemini 3.6 flash' },
+    { id: 'claude-agy-gemini-3.1-pro[1m]', display_name: 'Gemini 3.1 pro' },
+    { id: 'claude-agy-gpt-oss-120b', display_name: 'GPT-OSS 120B' },
   ]);
 });
 
@@ -251,7 +258,7 @@ test('ensure writes the discovery cache before reporting missing ChatGPT auth', 
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stderr, /ChatGPT sign-in is required/);
   await waitUntil(() => fs.existsSync(cache), 'ensure did not write the discovery cache');
-  assert.match(result.stdout, /discovery cache: (?:wrote 2 models|unchanged)/);
+  assert.match(result.stdout, /discovery cache: (?:wrote (?:2|5) models|unchanged)/);
 
   const stopped = await runGatewayCommand(
     testContext,
