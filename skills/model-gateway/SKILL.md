@@ -36,12 +36,18 @@ The SessionStart hook injects a one-line nudge while the gateway is in any half-
 state; act on it. The user sees that same line in the transcript, because a state only they can fix used to
 reach the model alone. Anything routine stays out of it, and the hook always exits 0 so the line survives:
 run `ensure` yourself when you need an exit code. SessionStart waits at most 12 seconds for a newly started
-gateway, then leaves its supervisor to finish in the background so it stays inside Claude Code's hook budget. `setup` is one-shot and idempotent: it downloads the claude-code-proxy binary
-(sha256-verified) and starts everything. Re-running it later is also the upgrade path. A newer cached Model Gateway version replaces an older sibling version from the same marketplace and plugin name. A different marketplace, plugin name, or non-cache install stays foreign and is refused.
+`setup` is an automated onboarding wizard:
+- Runs pre-flight prerequisite and dependency checks (`Node.js`, `AGY` Gemini, `claude-code-proxy`, `Grok`, ports, and shadowed env variables).
+- In interactive terminal sessions, prompts the user to choose between project-local scope (`.claude/settings.local.json`) [Recommended] and user-global scope (`~/.claude/settings.json`). Supports non-interactive CLI flags: `--scope project|user`, `--interactive`, and `--yes`.
+- Downloads and verifies the proxy binary, starts all gateway processes, updates model discovery cache, and outputs clear next steps.
 
 ```bash
+# Automated onboarding wizard (interactive prompt in TTY, or pass explicit scope)
 node "${CLAUDE_PLUGIN_ROOT}/bin/model-gateway.js" setup
-# only if setup says sign-in is needed:
+# or explicitly choose scope non-interactively:
+node "${CLAUDE_PLUGIN_ROOT}/bin/model-gateway.js" setup --scope project --yes
+
+# only if setup says ChatGPT sign-in is needed:
 node "${CLAUDE_PLUGIN_ROOT}/bin/model-gateway.js" login    # browser OAuth; --device for headless
 node "${CLAUDE_PLUGIN_ROOT}/bin/model-gateway.js" setup    # finishes the wiring
 ```
