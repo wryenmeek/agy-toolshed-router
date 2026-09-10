@@ -49,3 +49,17 @@ test('model-gateway setup onboarding wizard - promptScopeSelection resolves defa
   const userScope = await promptScopeSelection({ defaultScope: 'user', interactive: false });
   assert.equal(userScope, 'user');
 });
+
+test('model-gateway setup onboarding wizard - promptScopeSelection respects cliArgs overrides', async () => {
+  const userByArg = await promptScopeSelection({ cliArgs: ['--scope', 'user'] });
+  assert.equal(userByArg, 'user');
+
+  const projByArg = await promptScopeSelection({ cliArgs: ['--scope', 'project'] });
+  assert.equal(projByArg, 'project');
+
+  const writeUser = await promptScopeSelection({ cliArgs: ['--write-user'] });
+  assert.equal(writeUser, 'user');
+
+  const writeProj = await promptScopeSelection({ cliArgs: ['--write-project'] });
+  assert.equal(writeProj, 'project');
+});
