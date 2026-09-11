@@ -1,9 +1,11 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { PassThrough } = require('node:stream');
 const test = require('node:test');
 const agy = require('../lib/agy-backend.js');
 
@@ -141,6 +143,93 @@ test('normalizes model slugs and maps picker aliases', () => {
   assert.equal(agy.agyPickerId('gemini-3.6-flash'), 'gemini-3.6-flash');
 });
 
+test('parses the AGY CLI model listing and excludes native Claude rows', () => {
+  const output = [
+    'Fetching available models...',
+    'gemini-3.8-flash-high\tGemini 3.8 Flash (High)',
+    'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)',
+    'claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)',
+    'gpt-oss-120b-medium\tGPT-OSS 120B (Medium)',
+    'not-a-model\tIgnored',
+  ].join('\n');
+
+  assert.deepEqual(agy.parseAgyModelsOutput(output), [
+    { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)' },
+    { id: 'gemini-3.8-flash-medium', displayName: 'Gemini 3.8 Flash (Medium)' },
+    { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)' },
+  ]);
+});
+
+test('discovers AGY models from the CLI and falls back on command failure', async () => {
+  const calls = [];
+  const spawnImpl = (binPath, args, options) => {
+    calls.push({ binPath, args, options });
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    queueMicrotask(() => {
+      child.stderr.end('Fetching available models...\n');
+      child.stdout.end('gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n');
+      child.emit('close', 0);
+    });
+    return child;
+  };
+
+  const discovered = await agy.discoverAgyModels({ binPath: '/fake/agy', spawnImpl });
+  assert.deepEqual(discovered, [{ id: 'gemini-3.8-flash-low', displayName: 'Gemini 3.8 Flash (Low)' }]);
+  assert.deepEqual(calls, [{
+    binPath: '/fake/agy',
+    args: ['models'],
+    options: { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
+  }]);
+
+  const fallback = [{ id: 'gemini-fallback', displayName: 'Fallback' }];
+  const failed = await agy.discoverAgyModels({
+    spawnImpl: () => {
+      const child = new EventEmitter();
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      queueMicrotask(() => child.emit('close', 1));
+      return child;
+    },
+    fallback,
+  });
+  assert.deepEqual(failed, fallback);
+});
+
+test('supports JSON model output and terminates a timed-out AGY CLI', async () => {
+  const jsonSpawn = () => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    queueMicrotask(() => {
+      child.stdout.end(JSON.stringify({ models: [
+        { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)' },
+      ] }));
+      child.stderr.end('Fetching available models...\n');
+      child.emit('close', 0);
+    });
+    return child;
+  };
+
+  assert.deepEqual(await agy.discoverAgyModels({ spawnImpl: jsonSpawn }), [
+    { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)' },
+  ]);
+
+  let signal;
+  const timeoutSpawn = () => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = (value) => { signal = value; };
+    return child;
+  };
+  const fallback = [{ id: 'gemini-fallback', displayName: 'Fallback' }];
+  assert.deepEqual(await agy.discoverAgyModels({ spawnImpl: timeoutSpawn, timeout: 5, fallback }), fallback);
+  assert.equal(signal, 'SIGTERM');
+});
+
+
 test('checks agy CLI availability or API key auth', () => {
   const cli = agy.checkAgyCli();
   assert.equal(typeof cli.present, 'boolean');
@@ -169,6 +258,11 @@ test('resolves AGY model policies and attaches 1M picker aliases', () => {
   assert.equal(future.backend, 'agy');
   assert.equal(future.advertisedWindow, 1000000);
   assert.equal(future.pickerAlias, 'claude-agy-gemini-future-4.0[1m]');
+
+  const gptOssVariant = resolveGatewayModelPolicy('claude-agy-gpt-oss-120b-medium[1m]');
+  assert.equal(gptOssVariant.backend, 'agy');
+  assert.equal(gptOssVariant.advertisedWindow, 1000000);
+  assert.equal(gptOssVariant.pickerAlias, 'claude-agy-gpt-oss-120b-medium[1m]');
 });
 
 test('translates chat conversation to agy prompt and streams agy CLI events', () => {
