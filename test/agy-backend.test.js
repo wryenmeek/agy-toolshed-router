@@ -139,11 +139,14 @@ test('normalizes model slugs and maps picker aliases', () => {
   assert.equal(agy.normalizeModelSlug('Gemini 3.6 Flash (High)'), 'gemini-3.6-flash-high');
   assert.equal(agy.normalizeModelSlug('Gemini 3.1 Pro (Low)'), 'gemini-3.1-pro-low');
   assert.equal(agy.agyModelFromPicker('claude-agy-gemini-3.6-flash[1m]'), 'gemini-3.6-flash');
+  assert.equal(agy.agyModelFromPicker('claude-agy-claude-sonnet-4-6[1m]'), 'claude-sonnet-4-6');
   assert.equal(agy.agyModelFromPicker('gemini-3.1-pro'), 'gemini-3.1-pro');
   assert.equal(agy.agyPickerId('gemini-3.6-flash'), 'gemini-3.6-flash');
+  assert.equal(agy.agyPickerModelId('claude-sonnet-4-6'), 'claude-agy-claude-sonnet-4-6');
+  assert.equal(agy.agyPickerModelId('gemini-3.8-flash-high'), 'gemini-3.8-flash-high');
 });
 
-test('parses the AGY CLI model listing and excludes native Claude rows', () => {
+test('parses the AGY CLI model listing, including its Claude quota rows', () => {
   const output = [
     'Fetching available models...',
     'gemini-3.8-flash-high\tGemini 3.8 Flash (High)',
@@ -156,6 +159,7 @@ test('parses the AGY CLI model listing and excludes native Claude rows', () => {
   assert.deepEqual(agy.parseAgyModelsOutput(output), [
     { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)' },
     { id: 'gemini-3.8-flash-medium', displayName: 'Gemini 3.8 Flash (Medium)' },
+    { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)' },
     { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)' },
   ]);
 });
@@ -263,6 +267,12 @@ test('resolves AGY model policies and attaches 1M picker aliases', () => {
   assert.equal(gptOssVariant.backend, 'agy');
   assert.equal(gptOssVariant.advertisedWindow, 1000000);
   assert.equal(gptOssVariant.pickerAlias, 'claude-agy-gpt-oss-120b-medium[1m]');
+
+  const agyClaude = resolveGatewayModelPolicy('claude-agy-claude-sonnet-4-6[1m]');
+  assert.equal(agyClaude.backend, 'agy');
+  assert.equal(agyClaude.backendId, 'claude-sonnet-4-6');
+  assert.equal(agyClaude.advertisedWindow, 1000000);
+  assert.equal(agyClaude.pickerAlias, 'claude-agy-claude-sonnet-4-6[1m]');
 });
 
 test('translates chat conversation to agy prompt and streams agy CLI events', () => {
