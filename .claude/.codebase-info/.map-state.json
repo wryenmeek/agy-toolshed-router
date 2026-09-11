@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "tool": "codebase-mapper",
+  "version": "2.15.8",
+  "mappedAt": "2026-09-11",
+  "gitCommit": "e053a1ad284085763be1eab52bd0b50f57ce98d3",
+  "documents": [
+    "architecture.md",
+    "directory-structure.md",
+    "entry-points.md",
+    "patterns.md",
+    "tech-landscape.md"
+  ],
+  "hashes": {
+    "INDEX.md": "d7780dd32e60998b81732ba054b6e55fe4310ec5202bd007971da38a8ac8fbb3",
+    "architecture.md": "b458b996de974e241fd30cea5d34f130dc8462d982134728ad9642aedb07b849",
+    "directory-structure.md": "b3642256392e10a256882e81c883d9070ef2c143f414ff94635dc81e66e11201",
+    "entry-points.md": "2ce30420327131f2e05012fe84fcbc64eb7b05332dfa26bca91288137b875c89",
+    "patterns.md": "344976d06071e1d8288c634473fd768b131732ef2d96e484c28d6d5ce476ebfc",
+    "tech-landscape.md": "b1aee4bec57654eecb1a45be3844c1d4426844f438ad0f3faddaab5307a3dfd2"
+  }
+}
