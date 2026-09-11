@@ -123,15 +123,15 @@ State should be persisted atomically if it must survive gateway restarts. It mus
 
 ### Failure classification
 
-- `401`: invalid or revoked credential; disable the project until configuration is repaired.
-- `403`: inspect the structured error for permission, billing, or quota meaning; do not blindly rotate.
+- `401`: missing, invalid, or expired credential; disable the project until configuration is repaired.
+- `403`: inspect the structured error for permission/configuration meaning; do not treat it as quota exhaustion or blindly rotate.
 - `429` burst/rate/token limit: short bounded cooldown with exponential backoff and jitter.
 - `429` daily quota: disable the project until the next known reset.
 - `429` spend limit: use a short cooldown unless the provider identifies a longer period.
-- `5xx` or network error: bounded retry; failover only under an explicit policy because the upstream may have accepted the request.
+- transient `500`/`503`/`504` or network error: bounded retry; failover only under an explicit policy because the upstream may have accepted the request. Do not blindly retry unsupported `501` responses.
 - malformed request or unsupported model: do not rotate; return the client/configuration error.
 
-If Google supplies `Retry-After`, use it within configured maximums and preserve useful retry metadata for the client. If the error is ambiguous, use a conservative short cooldown rather than assuming daily exhaustion.
+Google's public API error documentation does not define a universal `Retry-After` contract. If the header is present in an observed response, use it within configured maximums and preserve useful retry metadata for the client; otherwise use the documented error category and bounded backoff. If the error is ambiguous, use a conservative short cooldown rather than assuming daily exhaustion.
 
 ## Streaming boundary
 
