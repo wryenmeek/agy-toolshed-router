@@ -1,157 +1,313 @@
-# Automated Upstream Rebase Plan
+# Automated Upstream Rebase and Compatibility Plan
 
 ## Goal
 
-Automate maintenance of the AGY-enabled `model-gateway` fork against
-`Eigenwise/eigenwise-toolshed` without silently overwriting AGY support or
-publishing unreviewed runtime changes.
+Maintain the AGY-enabled `model-gateway` fork against
+`Eigenwise/eigenwise-toolshed` with the least manual effort, without silently
+losing AGY support, accepting incompatible upstream behavior, or publishing
+unreviewed runtime changes.
 
-## Current problem
+This is a fork-drift and compatibility problem, not only a Git rebase problem:
+a rebase can be conflict-free while upstream or AGY CLI behavior has changed.
 
-The fork and upstream share the `model-gateway` identity and several runtime
-resources. Upstream updates must therefore be reviewed and tested before they
-are adopted. The fork's AGY changes should remain a small, identifiable patch
-series on top of upstream `main`.
+## Evidence and maintenance boundary
 
-## Proposed branch model
+The local fork is derived from upstream's `plugins/model-gateway` tree. The
+local addition is AGY routing and translation; most lifecycle, wiring, hooks,
+proxy, and test infrastructure follows upstream.
+
+At the comparison point, upstream was commit
+[`ae0554a6d9d40dd114b0c90cf9dfc215415565a1`](https://github.com/Eigenwise/eigenwise-toolshed/tree/ae0554a6d9d40dd114b0c90cf9dfc215415565a1),
+version `0.50.17`, while the local fork was version `0.50.10`. Upstream had
+files and tests absent locally, including `lib/codex-upstream-state.js`,
+`test/gateway-ps-locale.test.js`, and `test/thread-negotiation.test.js`.
+These differences demonstrate why tree and behavior drift must be detected
+explicitly.
+
+The official AGY CLI repository, package/release feed, and compatibility
+contract are not yet recorded. Identifying that primary source is a Phase 1
+prerequisite.
+
+## Branch and repository model
 
 - `upstream/main`: fetched from `https://github.com/Eigenwise/eigenwise-toolshed.git`
-- `agy-fork`: the maintained branch containing the upstream base plus AGY commits
-- `automation/upstream-rebase-*`: temporary branches created by automation
+- `agy-fork`: maintained branch containing upstream plus focused AGY commits
+- `automation/upstream-sync-*`: temporary branches created by automation
 - `main`: protected integration/release branch
 
-The AGY implementation should not be mixed with unrelated maintenance changes.
-If practical, preserve AGY work as one or more focused commits so rebases remain
-mechanical and conflicts are easy to inspect.
+The AGY implementation should remain a small, identifiable commit series. Do
+not mix unrelated maintenance changes into AGY commits. If the fork is hosted
+separately, configure the upstream remote and protect the maintained branch.
 
-## Automation
+## Runtime identity policy
 
-Add a scheduled and manually dispatchable GitHub Actions workflow:
+Rebase automation does not solve runtime identity collisions. Choose one policy
+before release:
 
-1. Check out the fork repository with full history.
+### Replacement policy (recommended initially)
+
+The AGY fork is the single installed `model-gateway` implementation. Do not
+install the upstream marketplace copy beside it. Rebase and test the fork, then
+release it as the chosen replacement.
+
+### Independent-installation policy
+
+If both distributions must be installable, the fork needs a distinct
+marketplace/plugin identity and separate:
+
+- ports
+- state directory
+- proxy binary/download location
+- discovery cache
+- registry and update-launcher paths
+- settings/wiring namespace
+- process ownership and recovery rules
+
+A renamed plugin alone is insufficient. Claude Code still effectively selects
+one `ANTHROPIC_BASE_URL` per project/process, so independent gateways are
+alternatives per project, not a transparent chain.
+
+## Low-cost upstream detection
+
+Add a lightweight daily or twice-weekly workflow that does not require model
+credentials:
+
+1. Fetch upstream `main` and record its commit SHA.
+2. Compare it with the last successfully inspected SHA.
+3. Exit quietly when `plugins/model-gateway/**` did not change.
+4. When it changed, classify touched paths as routing, lifecycle, wiring,
+   hooks, tests, documentation, or package metadata.
+5. Open or update an upstream-sync issue/PR with the SHA, changed paths, and
+   risk classification.
+
+Use a manual `workflow_dispatch` trigger as well. Add optional release/tag
+polling once upstream's release process is confirmed.
+
+The detector should also compare:
+
+- `.claude-plugin/plugin.json` version and identity
+- `package.json`
+- `package-lock.json`
+- `hooks/hooks.json`
+- model-gateway source and test inventory
+
+## Automated upstream sync PR
+
+When relevant upstream changes exist:
+
+1. Check out full history.
 2. Fetch upstream `main`.
-3. Rebase the maintained AGY branch onto the fetched upstream tip.
-4. Run dependency installation and the complete test suite.
-5. Run structural checks for AGY routing, plugin identity, ports, state paths,
-   settings wiring, and process supervision.
-6. If clean, push a temporary update branch and open or update a PR.
-7. If conflicts occur, stop without resolving them automatically and open an
-   issue or send a notification containing the upstream commit and conflict
-   summary.
+3. Rebase `agy-fork` onto the upstream tip.
+4. Run dependency installation and all validation gates.
+5. Create or update a reviewable sync PR.
+6. Never modify the protected branch directly.
 
-Recommended triggers:
+If conflicts occur, stop. Report the upstream SHA, conflicted paths, and
+whether each conflict touches an AGY or runtime contract. Do not use automatic
+ours/theirs resolution for routing, lifecycle, settings, hooks, or protocol
+files.
 
-- Weekly scheduled run.
-- `workflow_dispatch` for an immediate sync.
-- Optional run when upstream publishes a release or changes the plugin path.
+Use concurrency control so only one sync runs at a time. Supersede stale sync
+PRs rather than accumulating duplicates.
 
-## Required workflow permissions
+## Compatibility contracts
 
-Use the minimum permissions needed:
+Create explicit tests and snapshots for the interfaces most likely to drift:
 
-- `contents: write` for the automation branch.
-- `pull-requests: write` to create/update the sync PR.
-- `issues: write` only if conflict issues are created.
+### Model Gateway contracts
 
-Do not force-push protected branches. Pin third-party actions to reviewed
-versions or commit SHAs. Do not expose repository secrets to code from an
-untrusted PR.
+- model prefixes and backend selection
+- model discovery response shape
+- `[1m]` alias generation and stripping before forwarding
+- `/healthz` response shape
+- `/v1/models` response shape
+- lifecycle and process-ownership records
+- project/user settings wiring
+- hook commands and timeouts
+- Anthropic passthrough byte preservation
+- Codex/Grok continuation and context-error behavior
+- remote-control bindability and hosts-file restoration
 
-## Conflict policy
+Treat upstream changes to these contracts as review-required even when the
+rebase itself is clean.
 
-The workflow must fail safely when Git reports conflicts. It must not:
+### AGY contracts
 
-- Choose ours/theirs automatically for routing or lifecycle files.
-- Rebase and publish directly to the release branch.
-- Delete AGY files to make the rebase pass.
-- Treat passing unit tests as proof that model routing is correct.
+The adapter currently assumes the following behavior:
 
-A maintainer resolves conflicts, runs the full suite, and merges the PR.
+- `agy --version` exists and returns successfully
+- model data is an array in
+  `~/.gemini/antigravity-cli/cache/models_cache.json`
+- the CLI accepts `--input-format stream-json`, `--output-format stream-json`,
+  `--disable-slash-commands`, `--dangerously-skip-permissions`, `--model`, and
+  `--effort`
+- CLI output contains `step_update` and `result` events
+- Gemini REST/SSE responses contain the expected candidate, content-part,
+  function-call, finish-reason, and usage fields
+
+These assumptions are implemented in `lib/agy-backend.js` and
+`lib/request-worker.js`; they must be treated as versioned compatibility
+contracts, not undocumented implementation details.
+
+Add:
+
+- a documented `AGY_CLI_MIN_VERSION`
+- a machine-readable AGY compatibility probe
+- a fake-CLI fixture emitting representative stream events
+- old/current/malformed model-cache fixtures
+- Gemini REST/SSE response fixtures
+- tests for missing flags, renamed events, missing usage fields, and unknown
+  finish reasons
+- doctor output that identifies unsupported or untested AGY CLI versions
+
+Do not trust arbitrary cache data as model metadata; validate its shape and
+fall back safely.
+
+## Dependency and release drift detection
+
+### Model Gateway
+
+Fail or label the sync PR when any of these change:
+
+- package dependency or engine requirements
+- lockfile contents
+- plugin identity or version
+- hook definitions
+- default ports, state paths, cache paths, or settings keys
+- lifecycle/process-supervision code
+- model routing or protocol code
+- upstream files are added or local files unexpectedly disappear
+
+Require an explicit release note for runtime-sensitive changes. Keep a
+machine-readable last-inspected upstream SHA and plugin version in the sync
+workflow or generated maintenance record.
+
+### AGY CLI
+
+After the official AGY source is identified, monitor its release/tag/API feed.
+For every new release:
+
+1. Record the version and release metadata.
+2. Run `agy --version` and `agy --help`.
+3. Compare supported flags with the expected contract.
+4. Run the protocol probe using a fake or isolated credential-free request.
+5. Validate stream event names and field shapes.
+6. Validate model-cache schema and model discovery.
+7. Open a compatibility PR or issue when behavior changes.
+
+Maintain a tested-version range: minimum supported, current known-good, and
+latest available. Do not automatically advance the minimum version.
 
 ## Validation gates
 
-At minimum, the sync PR must pass:
+Every sync PR must pass:
 
 - `npm ci`
 - `npm test`
 - `git diff --check`
-- AGY backend tests and request-routing tests
-- Plugin manifest validation
-- Checks that the AGY model prefixes and dynamic discovery remain present
-- Checks that upstream Codex/Grok behavior remains present
+- AGY backend and request-routing tests
+- plugin manifest validation
+- AGY-prefix and dynamic-discovery regression checks
+- Codex, Grok, AGY, and Anthropic passthrough coverage
+- dependency/lockfile review checks
 
-Runtime-sensitive changes should additionally receive a manual review of:
+Use the minimum supported Node version and the current Node version in CI.
+The current package declares Node `>=22.5.0` and AJV `8.20.0`; detect changes
+rather than assuming these remain stable.
 
-- `lib/runtime.js`
-- `lib/request-worker.js`
-- `lib/process-supervision.js`
-- `lib/settings-wiring.js`
-- `hooks/hooks.json`
-- `hooks/registry-writer.js`
+Use isolated homes, ports, sockets, caches, logs, and settings. CI must not
+require live ChatGPT, Grok, AGY, Gemini, or Anthropic credentials.
 
-Do not require a live login or a production gateway during CI. Use isolated
-homes, ports, sockets, caches, and logs as the existing test suite does.
+## Canary and promotion
 
-## Version and identity guardrails
+Before releasing a merged sync:
 
-Rebase automation does not solve runtime identity collisions. Before release,
-the fork should either:
+1. Build the plugin artifact in a clean environment.
+2. Install it into an isolated temporary Claude configuration.
+3. Start the gateway using ephemeral test ports.
+4. Exercise `/healthz` and `/v1/models`.
+5. Test one fixture request for each backend and Anthropic passthrough.
+6. Run `doctor` and verify the effective wiring and serving version.
+7. Publish only after the canary passes.
 
-1. Remain the single AGY-enabled implementation of the upstream plugin, or
-2. Move to a distinct marketplace/plugin identity and fully isolate its ports,
-   state directory, proxy binary, discovery cache, registry, update launcher,
-   settings namespace, and process ownership logic.
+Record the upstream SHA, fork version, AGY CLI version, Node version, and test
+result with the release. Keep the previous artifact available for rollback.
 
-If the fork is distributed separately, use a distinct identity so an upstream
-cache update cannot replace or outrank the AGY implementation.
+## GitHub Actions permissions and safety
 
-## Rollout
+Use least privilege:
 
-### Phase 1: Prepare
+- `contents: write` only for automation branches
+- `pull-requests: write` for sync PRs
+- `issues: write` only if conflict issues are created
 
-- Host the fork in a Git repository with Actions enabled.
-- Add and verify the `upstream` remote.
-- Identify the canonical AGY-maintenance branch.
-- Confirm branch protection and required checks.
+Pin third-party actions to reviewed commit SHAs. Do not expose secrets to
+untrusted PR code. Never force-push protected branches or auto-merge changes
+touching runtime/protocol contracts.
 
-### Phase 2: Automate sync PRs
+## Rollout phases
 
-- Add the scheduled/manual workflow.
-- Add conflict issue or notification handling.
-- Run it manually against the current upstream tip.
+### Phase 1: Establish sources and ownership
+
+- Host the maintained fork in a repository with Actions enabled.
+- Configure and verify the `upstream` remote.
+- Identify the canonical AGY CLI repository/release feed.
+- Choose replacement versus independent-installation policy.
+- Identify the canonical maintained branch.
+- Configure branch protection and required checks.
+
+### Phase 2: Detect and sync
+
+- Add the lightweight upstream SHA/path detector.
+- Add scheduled and manual sync workflows.
+- Add conflict issue/notification handling.
+- Run one manual sync against the current upstream tip.
 - Review the first generated PR without merging it.
 
-### Phase 3: Harden
+### Phase 3: Contract hardening
 
-- Add AGY-presence and namespace regression checks.
-- Add concurrency control so only one sync runs at a time.
-- Automatically close or supersede stale sync PRs.
-- Document the conflict-resolution and release procedure.
+- Add model-gateway contract snapshots.
+- Add AGY CLI version, flag, stream, and cache probes.
+- Add dependency and lockfile diff guards.
+- Add Node-version matrix testing.
+- Add path-based CODEOWNERS review for runtime and protocol files.
 
-### Phase 4: Operate
+### Phase 4: Canary and release
 
-- Merge clean sync PRs after review.
-- Resolve conflicts manually and improve tests when upstream changes expose
-  assumptions.
-- Periodically evaluate whether AGY can be contributed upstream.
+- Add isolated install and backend canary tests.
+- Record provenance and tested dependency versions.
+- Add rollback documentation and artifact retention.
+- Require manual approval for runtime-sensitive releases.
+
+### Phase 5: Reduce long-term drift
+
+- Keep AGY changes focused and upstream-compatible.
+- Contribute the AGY backend upstream where feasible.
+- Remove fork-only compatibility code if upstream adopts AGY.
 
 ## Acceptance criteria
 
 - A maintainer can start a sync from the Actions UI.
-- A scheduled sync creates a reviewable PR when rebase and tests pass.
-- A conflicting rebase never modifies the protected branch and produces an
-  actionable notification.
-- CI verifies both AGY and upstream model families.
-- No workflow step force-pushes or silently resolves semantic conflicts.
-- The release process clearly identifies which plugin identity and runtime
-  resources the resulting build owns.
+- Scheduled detection is quiet for unrelated upstream changes.
+- Relevant changes produce a reviewable PR with SHA and risk classification.
+- Conflicting rebases never modify protected branches and produce actionable
+  notifications.
+- AGY CLI releases are detected and compatibility-tested.
+- CI verifies AGY, Codex, Grok, and Anthropic behavior.
+- Dependency, lockfile, hook, identity, and runtime-path changes are visible.
+- No workflow silently resolves semantic conflicts or force-pushes protected
+  branches.
+- A clean sync can be promoted through an isolated canary and rolled back.
+- The release identifies the plugin identity and runtime resources it owns.
 
 ## Open decisions
 
 - What repository will host the maintained fork?
-- Should the maintained branch be named `agy-fork`, `main`, or another name?
-- Should conflicts create GitHub issues, send notifications, or both?
-- Should syncs be weekly or daily?
-- Should the fork retain the upstream plugin identity as a replacement, or be
-  fully namespaced for independent installation?
-- Can the AGY backend be proposed upstream to eliminate long-term fork drift?
+- Should the maintained branch be `agy-fork`, `main`, or another name?
+- Should conflicts create GitHub issues, notifications, or both?
+- Should detection run daily, twice weekly, or weekly?
+- What is the official AGY CLI source and release channel?
+- What AGY CLI versions should be supported and tested?
+- Should the fork retain upstream identity as a replacement, or be fully
+  namespaced for independent installation?
+- Can AGY be contributed upstream to eliminate long-term fork drift?
