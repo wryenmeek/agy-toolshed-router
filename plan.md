@@ -108,7 +108,46 @@ ours/theirs resolution for routing, lifecycle, settings, hooks, or protocol
 files.
 
 Use concurrency control so only one sync runs at a time. Supersede stale sync
-PRs rather than accumulating duplicates.
+PRs rather than accumulating duplicates. Use the upstream SHA as the stable sync
+key: at most one active PR may exist for a given upstream SHA, and reruns must
+update that PR rather than create another one.
+
+### Automation state machine
+
+Represent each observation and sync attempt with an explicit status:
+
+```text
+observed -> irrelevant
+observed -> sync_pending -> rebased -> ready_for_review
+                                  -> contract_failed
+                                  -> canary_failed
+observed -> conflicted -> human_required
+ready_for_review -> released
+```
+
+A rebase conflict, contract failure, or canary failure must not transition to a
+release candidate. Infrastructure failures should retry within a bounded policy,
+then remain visible as failed rather than being treated as an upstream no-op.
+Every state transition must be idempotent and keyed by upstream SHA plus fork
+base SHA.
+
+### Run evidence and ownership
+
+Every detector, sync, contract, canary, and release run should retain a compact
+machine-readable record containing:
+
+- upstream SHA, fork base SHA, sync-run ID, and generated PR number
+- changed paths and risk classification
+- rebase result and conflicted paths, if any
+- dependency and lockfile hashes
+- Node version and AGY CLI version
+- contract and canary results, artifact digest, and doctor output
+
+Assign review ownership explicitly: fork maintainers own rebase conflicts;
+AGY maintainers own `lib/agy-backend.js`, `lib/request-worker.js`, and AGY
+fixtures; gateway maintainers own runtime, wiring, hooks, and lifecycle files;
+dependency reviewers own manifests and lockfiles; release maintainers approve
+promotion. Add CODEOWNERS rules for these paths and for workflow files.
 
 ## Compatibility contracts
 
@@ -196,7 +235,17 @@ For every new release:
 7. Open a compatibility PR or issue when behavior changes.
 
 Maintain a tested-version range: minimum supported, current known-good, and
-latest available. Do not automatically advance the minimum version.
+latest available. The currently installed CLI is `agy 1.2.1`. Its `--help`
+output confirms the adapter's current flags (`stream-json` input/output,
+`--disable-slash-commands`, `--dangerously-skip-permissions`, `--model`, and
+`--effort`, whose values are `low|medium|high`), but this does not prove the
+stream event protocol. Record `1.2.1` as the current known-good version, not as
+the minimum, until at least one older version and the protocol behavior have
+been tested. Do not automatically advance the minimum version.
+
+A renamed required event, missing required field, or incompatible flag blocks
+release; malformed optional fields should exercise the adapter's safe fallback
+behavior.
 
 ## Validation gates
 
@@ -232,6 +281,26 @@ Before releasing a merged sync:
 
 Record the upstream SHA, fork version, AGY CLI version, Node version, and test
 result with the release. Keep the previous artifact available for rollback.
+
+A release is promotable only when the rebase is conflict-free, all blocking
+contracts and dependency checks pass, the isolated canary passes, `doctor`
+reports the expected serving version, provenance is recorded, and a rollback
+artifact exists. Keep fork versioning independent from upstream versioning:
+record the upstream version and SHA as provenance, but do not blindly copy
+upstream plugin versions.
+
+## Automation security boundary
+
+Separate automation into jobs with distinct permissions:
+
+- detection: read-only upstream inspection
+- sync: branch and reviewable PR creation
+- validation: generated code execution without write credentials
+- promotion: protected environment with required human approval
+
+Do not expose write tokens while testing generated rebases. Do not force-push
+protected branches, auto-merge workflow or protocol changes, or allow an
+untrusted PR to alter its own validation permissions.
 
 ## GitHub Actions permissions and safety
 
@@ -298,6 +367,8 @@ touching runtime/protocol contracts.
 - No workflow silently resolves semantic conflicts or force-pushes protected
   branches.
 - A clean sync can be promoted through an isolated canary and rolled back.
+- Every automation run retains enough evidence to reproduce its decision.
+- Duplicate runs for the same upstream SHA converge on one sync PR.
 - The release identifies the plugin identity and runtime resources it owns.
 
 ## Open decisions
@@ -307,7 +378,11 @@ touching runtime/protocol contracts.
 - Should conflicts create GitHub issues, notifications, or both?
 - Should detection run daily, twice weekly, or weekly?
 - What is the official AGY CLI source and release channel?
-- What AGY CLI versions should be supported and tested?
+- What AGY CLI versions should be supported and tested? Treat `1.2.1` as the
+  current known-good version until an older version and the stream protocol are
+  tested; do not set the minimum from the installed version alone.
+- What evidence retention period and artifact store should automation use?
+- What retry, timeout, and escalation policy applies to failed runs?
 - Should the fork retain upstream identity as a replacement, or be fully
   namespaced for independent installation?
 - Can AGY be contributed upstream to eliminate long-term fork drift?
