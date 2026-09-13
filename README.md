@@ -19,7 +19,7 @@ Reload the plugin, then start the Model Gateway skill:
 
 > Set up Model Gateway for me.
 
-The skill runs `setup`, which installs and starts the local gateway, checks your login, writes the current project's `.claude/settings.local.json`, and confirms the project wiring. If setup asks for login, complete the browser sign-in, then let Claude run `setup` again to finish the wiring and confirmation. The bundled `env --write-user` command enables machine-wide wiring, while `env --write-project` wires one project.
+The skill runs `setup`, an automated onboarding wizard that audits prerequisites (Node.js >= 22.5.0, Antigravity AGY / Gemini API key, Codex proxy, Grok CLI, port availability on 18764/18765, and shadowed environment variables), interactively prompts for configuration scope (`project-local` [Recommended] vs `user-global`), verifies and starts background gateway processes, and confirms wiring. If setup asks for login, complete the browser sign-in, then let Claude run `setup` again. Non-interactive CLI runs can specify `--scope project|user` and `--yes` (e.g. `node "${CLAUDE_PLUGIN_ROOT}/bin/model-gateway.js" setup --scope project --yes`). The bundled `env --write-user` command enables machine-wide wiring, while `env --write-project` wires one project.
 
 After the project wiring is confirmed, fully restart the Claude Code process for that same project. A plugin reload alone does not reload the model picker or settings from the new process. Select a gateway model only after that restart.
 
@@ -32,7 +32,7 @@ with an API-key credential. Model Gateway writes its discovery cache for OAuth s
 new rows appear after a full Claude Code restart. `/reload-plugins` does not reload the picker cache.
 
 - `lib/runtime.js`'s `MODEL_WINDOW_POLICY` is the authority for every gateway picker row. GPT-5.6 Sol, Terra, Luna, and GPT-6 Astra are measured at 920,012 accepted and 935,012 refused on 2026-09-05, so the gateway advertises 920k. Other Codex proxy rows use the table's explicit unmeasured 920k default until measured.
-- Antigravity (AGY) provides Google Gemini models (`gemini-3.6-flash`, `gemini-3.1-pro`, `gpt-oss-120b`). Gemini models feature 1M context windows, and any future dynamic AGY models are automatically picked up with 1M context via the `agy-default` policy. The gateway translates Anthropic Messages and tool calls to Google Gemini's REST streaming format using local `agy` CLI authentication or `GEMINI_API_KEY`.
+- Antigravity (AGY) provides Google Gemini and open models (`gemini-3.6-flash`, `gemini-3.1-pro`, `gpt-oss-120b`). Gemini models feature 1M context windows (`[1m]` picker alias), while `gpt-oss-120b` features a 128k context window. Any future dynamic AGY models are automatically picked up with 1M context via the `agy-default` policy. The gateway translates Anthropic Messages and tool calls to Google Gemini's streaming format using local `agy` CLI authentication or `GEMINI_API_KEY`.
 - A gateway row above Claude Code's 200k unknown-model window gets a `[1m]` picker alias. That alias gives Claude Code a 1M client window, but a lower explicit `autoCompactWindow` still wins. The optional `325000` setting is a cap, and with that cap the client compacts around `292000`. The alias is removed before forwarding to Codex, Grok, or AGY, and it does not promise a 1M backend input limit. Use `/context` to inspect the selected model and effective cap.
 - Claude models keep using Anthropic normally.
 
