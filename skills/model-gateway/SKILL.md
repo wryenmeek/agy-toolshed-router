@@ -26,7 +26,7 @@ The first-run order matters:
 
 1. Install Model Gateway at the recommended project scope.
 2. Reload plugins so the new skill is available.
-3. Invoke this skill and run `setup`.
+3. Invoke this skill and run `setup` (the automated onboarding wizard audits prerequisites, prompts for configuration scope, and wires the gateway).
 4. If setup says sign-in is needed, have the user complete `login`, then run `setup` again. The second setup finishes the download, wiring, and project confirmation.
 5. After the project wiring is confirmed, tell the user to fully restart the Claude Code process for this same project before selecting a model.
 
@@ -36,6 +36,8 @@ The SessionStart hook injects a one-line nudge while the gateway is in any half-
 state; act on it. The user sees that same line in the transcript, because a state only they can fix used to
 reach the model alone. Anything routine stays out of it, and the hook always exits 0 so the line survives:
 run `ensure` yourself when you need an exit code. SessionStart waits at most 12 seconds for a newly started
+supervisor, then leaves it to finish in the background so it stays inside Claude Code's hook budget.
+
 `setup` is an automated onboarding wizard:
 - Runs pre-flight prerequisite and dependency checks (`Node.js`, `AGY` Gemini, `claude-code-proxy`, `Grok`, ports, and shadowed env variables).
 - In interactive terminal sessions, prompts the user to choose between project-local scope (`.claude/settings.local.json`) [Recommended] and user-global scope (`~/.claude/settings.json`). Supports non-interactive CLI flags: `--scope project|user`, `--interactive`, and `--yes`.
