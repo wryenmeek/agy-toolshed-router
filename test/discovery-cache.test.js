@@ -220,8 +220,8 @@ test('refreshModels writes the configured gateway discovery cache', async (testC
   assert.deepEqual(discoveryCache.models, [
     { id: 'claude-gpt-6-astra[1m]', display_name: 'GPT-6-astra (Codex)' },
     { id: 'claude-grok-4.5[1m]', display_name: 'Grok 4.5' },
-    { id: 'claude-agy-gemini-3.6-flash[1m]', display_name: 'Gemini 3.6 flash' },
-    { id: 'claude-agy-gemini-3.1-pro[1m]', display_name: 'Gemini 3.1 pro' },
+    { id: 'claude-agy-gemini-3.6-flash[1m]', display_name: 'Gemini 3.6 Flash' },
+    { id: 'claude-agy-gemini-3.1-pro[1m]', display_name: 'Gemini 3.1 Pro' },
     { id: 'claude-agy-gpt-oss-120b', display_name: 'GPT-OSS 120B' },
   ]);
 });

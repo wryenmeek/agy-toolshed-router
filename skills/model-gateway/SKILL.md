@@ -1,16 +1,16 @@
 ---
 name: model-gateway
 description: >-
-  Set up, update, or diagnose the local ChatGPT/Codex, Grok, and Antigravity (AGY) Gemini gateway for Claude Code's /model picker. Use
+  Set up, update, or diagnose the local ChatGPT/Codex, Grok, and Antigravity (AGY) Gemini and Claude models gateway for Claude Code's /model picker. Use
   for gateway setup, login, model visibility, routing, or failures.
 ---
 
 # model-gateway
 
-Local processes give Claude Code native access to the user's subscription and CLI models (ChatGPT/Codex, Grok, and Antigravity Gemini):
+Local processes give Claude Code native access to the user's subscription and CLI models (ChatGPT/Codex, Grok, and Antigravity Gemini and Claude models):
 `claude-code-proxy` (translates Anthropic Messages API to the Codex backend), Grok CLI backend, and Antigravity (`agy`) CLI backend.
 `ANTHROPIC_BASE_URL` points at the shim router: requests for `claude-gpt-*` go to Codex, `claude-grok-*` to Grok, and `claude-agy-*` / `claude-gemini-*`
-to Antigravity Gemini, while everything else passes through to api.anthropic.com with the user's normal claude.ai login.
+to Antigravity Gemini and Claude models, while everything else passes through to api.anthropic.com with the user's normal claude.ai login.
 The shim's `/v1/models` advertises gateway models with a `claude-` prefix because Claude Code's model discovery drops ids that don't
 start with `claude`/`anthropic`. The route is decided by the backend family segment (`claude-gpt-*`, `claude-grok-*`, `claude-agy-*`), never by the prefix alone.
 
@@ -39,7 +39,7 @@ run `ensure` yourself when you need an exit code. SessionStart waits at most 12 
 supervisor, then leaves it to finish in the background so it stays inside Claude Code's hook budget.
 
 `setup` is an automated onboarding wizard:
-- Runs pre-flight prerequisite and dependency checks (`Node.js`, `AGY` Gemini, `claude-code-proxy`, `Grok`, ports, and shadowed env variables).
+- Runs pre-flight prerequisite and dependency checks (`Node.js`, `AGY` CLI/model access, `claude-code-proxy`, `Grok`, ports, and shadowed env variables).
 - In interactive terminal sessions, prompts the user to choose between project-local scope (`.claude/settings.local.json`) [Recommended] and user-global scope (`~/.claude/settings.json`). Supports non-interactive CLI flags: `--scope project|user`, `--interactive`, and `--yes`.
 - Downloads and verifies the proxy binary, starts all gateway processes, updates model discovery cache, and outputs clear next steps.
 
@@ -101,7 +101,7 @@ bring auth back, or you kill the session that was about to use it.
 
 ## Selecting models
 
-- `/model` picker: rows like "GPT-5.6-sol (Codex)", "Grok 4.5", "Gemini 3.6 Flash", "Gemini 3.1 Pro", and "GPT-OSS 120B".
+- AGY discovery invokes `agy models` at worker startup and accepts valid `gemini-*`, `gpt-oss-*`, and `claude-*` ids. Fallback order is dynamic CLI output, `~/.gemini/antigravity-cli/cache/models_cache.json`, then built-in defaults. The timeout is 10 seconds by default (`CODEX_GATEWAY_AGY_MODELS_TIMEOUT_MS`); `CODEX_GATEWAY_AGY_HOME` selects another AGY home. Dynamic rows update the gateway discovery cache and require a new Claude Code process; `/reload-plugins` does not reload picker rows. Auth refresh from successful `login`/`setup` normally needs no restart unless settings, discovery cache, plugin files, or model rows changed. AGY Claude quota rows are exposed as `claude-agy-claude-<model>[1m]`, with the namespace and suffix removed before forwarding. AGY Claude needs an installed/authenticated `agy` CLI; `GEMINI_API_KEY` supports AGY Gemini/API models but not Claude quota models. CLI request failures are errors, not empty successes.
 - Typed: `/model claude-gpt-5.6-sol[1m]`, `/model claude-grok-4.5[1m]`, `/model claude-agy-gemini-3.6-flash[1m]`, or `/model claude-agy-gemini-3.1-pro[1m]`. The picker and Sidequest catalog emit those exact ids. The prefix/suffix is translated before routing upstream.
 - `lib/runtime.js`'s exported `MODEL_WINDOW_POLICY` is the sole authority for gateway backend windows, picker aliases, advertised windows, and sentry mode. GPT-5.6 Sol, Terra, Luna, and GPT-6 Astra are measured rows. GPT ids absent from the table are deliberately advertised through its explicitly unmeasured 920k default, rather than silently inheriting a window. Grok 4.5 is a measured 500k row with the `[1m]` picker alias. Gemini 3.6 Flash and 3.1 Pro have 1M context windows with the `[1m]` picker alias, and dynamic new AGY models automatically resolve via `agy-default`.
 - Codex GPT-5.6 through the ChatGPT Codex product (the subscription login this gateway routes to, not the pay-per-token API) accepted 920,012 input tokens and refused 935,012 on 2026-09-05 through claude-code-proxy 0.1.35 (upstream 55bf0b58). The shim advertises `920000` by default. Its synthetic 413 trigger is the smaller of `CODEX_GATEWAY_COMPACT_TRIGGER` when set and the policy row's backend window minus 40k tokens. `CODEX_GATEWAY_COMPACT_TRIGGER` is a ceiling, never an override of that headroom. With the optional client `autoCompactWindow` cap at `325000`, Claude Code compacts around `292000`, so the sentry is a backstop that normally does not fire. `CODEX_GATEWAY_CONTEXT_WINDOW` overrides every advertised Codex window. Claude Code 2.1.261 ignores a settings-file `CLAUDE_CODE_MAX_CONTEXT_TOKENS` value for its own unrecognized-model resolver, so rows above 200k use their policy's recognized `[1m]` alias. That alias gives Claude Code a 1M client window, the closest available setting to the verified 920k backend window; it does not promise a 1M backend input limit. A lower explicit `autoCompactWindow` still wins. Use `/context` to inspect the selected model and effective cap.
