@@ -138,7 +138,7 @@ test('restart with drain submits the newest installed CLI path', async (t) => {
   });
 
   assert.equal(exitCode, 0);
-  assert.deepEqual(await restarted, { script: newerCliPath });
+  assert.deepEqual(await restarted, { script: fs.realpathSync(newerCliPath) });
 });
 
 test('drain timeout says that the shim was force-stopped', async (t) => {
