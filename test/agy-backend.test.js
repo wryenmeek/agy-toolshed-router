@@ -146,6 +146,14 @@ test('normalizes model slugs and maps picker aliases', () => {
   assert.equal(agy.agyPickerModelId('gemini-3.8-flash-high'), 'gemini-3.8-flash-high');
 });
 
+test('normalizes mixed-case AGY picker ids and rejects malformed suffixes', () => {
+  assert.equal(agy.agyPickerModelId('Claude-Sonnet-4-6'), 'claude-agy-Claude-Sonnet-4-6');
+  assert.equal(agy.agyModelFromPicker('CLAUDE-AGY-Claude-Sonnet-4-6[1m]', ['claude-sonnet-4-6']), 'claude-sonnet-4-6');
+  assert.equal(agy.agyModelFromPicker('claude-agy-[1m]', ['gemini-3.6-flash']), null);
+  assert.equal(agy.agyModelFromPicker('claude-agy-gemini-3.6-flash[1m][1m]', ['gemini-3.6-flash']), null);
+});
+
+
 test('parses the AGY CLI model listing, including its Claude quota rows', () => {
   const output = [
     'Fetching available models...',
@@ -335,5 +343,19 @@ test('translates chat conversation to agy prompt and streams agy CLI events', ()
   assert.match(frames[5], /"input_tokens":15/);
   assert.match(frames[5], /"output_tokens":3/);
   assert.match(frames[6], /"type":"message_stop"/);
+});
+
+test('does not append a successful terminal to an unsuccessful AGY result', () => {
+  const frames = [];
+  const transformer = agy.createAgyCliStreamTransformer((f) => frames.push(f), 'gemini-3.6-flash');
+
+  transformer.event({
+    event: 'result',
+    result: { status: 'ERROR', usage: { input_tokens: 2, output_tokens: 1 } },
+  });
+  transformer.end({ input_tokens: 2, output_tokens: 1 });
+
+  assert.equal(frames.filter((frame) => frame.includes('"type":"error"')).length, 1);
+  assert.equal(frames.filter((frame) => frame.includes('"type":"message_stop"')).length, 0);
 });
 
