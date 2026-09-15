@@ -1,0 +1,23 @@
+{
+  "name": "model-gateway",
+  "version": "0.50.13",
+  "description": "Your ChatGPT/Codex, Grok, and Antigravity Gemini and Claude subscription models in Claude Code's /model picker. A local gateway routes selected models to their Codex, Grok, or AGY CLI backends and passes ordinary Claude traffic to Anthropic.",
+  "author": {
+    "name": "Eigenwise",
+    "email": "kenny@eigenwise.io"
+  },
+  "homepage": "https://github.com/Eigenwise/eigenwise-toolshed/tree/main/plugins/model-gateway",
+  "repository": "https://github.com/Eigenwise/eigenwise-toolshed",
+  "license": "MIT",
+  "suiteTimeout": 300000,
+  "keywords": [
+    "codex",
+    "openai",
+    "gpt",
+    "chatgpt",
+    "model-picker",
+    "gateway",
+    "proxy",
+    "subscription"
+  ]
+}
