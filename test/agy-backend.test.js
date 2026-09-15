@@ -242,12 +242,11 @@ test('supports JSON model output and terminates a timed-out AGY CLI', async () =
 });
 
 
-test('checks agy CLI availability or API key auth', () => {
-  const cli = agy.checkAgyCli();
-  assert.equal(typeof cli.present, 'boolean');
-  if (cli.present) {
-    assert.match(cli.version, /\d+\.\d+\.\d+/);
-  }
+test('checks agy CLI availability without relying on a developer-installed CLI', () => {
+  const cli = agy.checkAgyCli('/deterministic/fake-agy', {
+    spawnSyncImpl: () => ({ status: 0, stdout: 'agy 1.0.0\n' }),
+  });
+  assert.deepEqual(cli, { present: true, version: 'agy 1.0.0', path: '/deterministic/fake-agy' });
 });
 
 test('resolves AGY model policies and attaches 1M picker aliases', () => {
@@ -357,5 +356,40 @@ test('does not append a successful terminal to an unsuccessful AGY result', () =
 
   assert.equal(frames.filter((frame) => frame.includes('"type":"error"')).length, 1);
   assert.equal(frames.filter((frame) => frame.includes('"type":"message_stop"')).length, 0);
+});
+
+test('makes CLI stream errors terminal and idempotent', () => {
+  const frames = [];
+  const transformer = agy.createAgyCliStreamTransformer((f) => frames.push(f), 'gemini-3.6-flash');
+  transformer.error(new Error('first'));
+  transformer.error(new Error('second'));
+  transformer.event({ event: 'result', result: { status: 'SUCCESS' } });
+  assert.equal(frames.filter((frame) => frame.includes('"type":"error"')).length, 1);
+  assert.equal(frames.filter((frame) => frame.includes('second')).length, 0);
+  assert.equal(frames.filter((frame) => frame.includes('"type":"message_start"')).length, 0);
+});
+
+test('bounds AGY discovery output and terminates the child', async () => {
+  let signals = [];
+  const child = new EventEmitter();
+  child.stdout = new PassThrough(); child.stderr = new PassThrough();
+  child.kill = (signal) => signals.push(signal);
+  const result = await agy.discoverAgyModels({
+    spawnImpl: () => { queueMicrotask(() => child.stdout.emit('data', 'x'.repeat(2048))); return child; },
+    outputLimit: 1024,
+    fallback: [{ id: 'gemini-fallback' }],
+  });
+  assert.deepEqual(result, [{ id: 'gemini-fallback' }]);
+  assert.deepEqual(signals, ['SIGTERM']);
+});
+
+test('resolves only safe regular executable files and filters child environment', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-cli-'));
+  const bin = path.join(dir, 'agy');
+  fs.writeFileSync(bin, '#!/usr/bin/env node\n');
+  fs.chmodSync(bin, 0o755);
+  assert.equal(agy.resolveAgyCliPath(bin), fs.realpathSync(bin));
+  const env = agy.agyChildEnv({ PATH: '/bin', GEMINI_API_KEY: 'secret', HOME: '/tmp', SECRET: 'no' });
+  assert.deepEqual(env, { PATH: '/bin', GEMINI_API_KEY: 'secret', HOME: '/tmp' });
 });
 
