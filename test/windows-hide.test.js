@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const test = require('node:test');
-const { inspectPlugin, inspectSource, unhiddenCalls } = require('../../test-support/windows-hide.js');
+const { inspectPlugin, inspectSource, unhiddenCalls } = require('./windows-hide-support.js');
 
 const pluginRoot = path.join(__dirname, '..');
 

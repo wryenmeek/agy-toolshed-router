@@ -5,7 +5,6 @@ const { createHash } = require('node:crypto');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
-const { resolveSuite } = require('../../sidequest/lib/suite-resolver.js');
 const Ajv2020 = require('ajv/dist/2020.js');
 const {
   ACCEPTED_REGEX_ESCAPE_TOKEN_KINDS,
@@ -92,16 +91,11 @@ test('uses Ajv 8.20.0 as the conforming Draft 2020-12 oracle', () => {
   assert.equal(typeof Ajv2020, 'function');
 });
 
-test('uses the shared suite resolver package-script convention for cold gateway setup', () => {
-  const suite = resolveSuite(path.resolve(__dirname, '../../..'), {
-    name: 'model-gateway',
-    dir: 'plugins/model-gateway',
-  });
-  assert.deepEqual(suite, {
-    plugin: 'model-gateway',
-    cwd: 'plugins/model-gateway',
+test('uses the repository package-script convention for cold gateway setup', () => {
+  const packageJson = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  assert.deepEqual({ setup: 'npm ci', command: packageJson.scripts.test }, {
     setup: 'npm ci',
-    command: 'npm test',
+    command: 'node --test --test-concurrency=2 --test-timeout=300000 "test/*.test.js"',
   });
 });
 
