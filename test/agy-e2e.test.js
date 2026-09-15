@@ -34,10 +34,15 @@ process.stdin.on('data', (chunk) => {
     process.stderr.write('fixture upstream failure\\n');
     process.exit(7);
   }
-  process.stdout.write(JSON.stringify({ event: 'result', result: {
-    status: 'SUCCESS', response: 'fixture response', usage: { input_tokens: 3, output_tokens: 2 },
-  } }) + '\\n');
-  process.exit(0);
+  const emitResult = () => {
+    const status = input.includes('zero exit error') ? 'ERROR' : 'SUCCESS';
+    process.stdout.write(JSON.stringify({ event: 'result', result: {
+      status, response: 'fixture response', usage: { input_tokens: 3, output_tokens: 2 },
+    } }) + '\\n');
+    process.exit(0);
+  };
+  if (input.includes('delay this request')) setTimeout(emitResult, 300);
+  else emitResult();
 });
 `);
   fs.chmodSync(bin, 0o755);
@@ -57,6 +62,7 @@ function request(port, pathname, body) {
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString() }));
     });
+    req.setTimeout(10000, () => req.destroy(new Error('AGY E2E request timeout')));
     req.on('error', reject);
     req.end(body);
   });
@@ -139,4 +145,14 @@ test('returns an error when the AGY CLI exits nonzero instead of empty success',
       message: 'model-gateway: AGY CLI exited with code 7: fixture upstream failure',
     },
   });
+});
+
+test('returns an error for a zero-exit unsuccessful AGY result', async (t) => {
+  const gateway = await startAgyGateway(t);
+  const response = await request(gateway.port, '/v1/messages', JSON.stringify({
+    model: 'claude-agy-claude-sonnet-4-6[1m]', stream: false,
+    messages: [{ role: 'user', content: 'zero exit error' }],
+  }));
+  assert.equal(response.status, 502);
+  assert.match(response.body, /AGY CLI returned an unsuccessful result/);
 });
