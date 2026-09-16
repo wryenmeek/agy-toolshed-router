@@ -254,8 +254,8 @@ test('checks AGY CLI authentication with a non-interactive models probe', () => 
   const auth = agy.checkAgyAuth('/deterministic/fake-agy', {
     env: { PATH: '/deterministic', HOME: '/tmp' },
     fsImpl: { existsSync: () => false },
-    spawnSyncImpl: (bin, args) => {
-      calls.push({ bin, args });
+    spawnSyncImpl: (bin, args, options) => {
+      calls.push({ bin, args, env: options.env });
       return args[0] === '--version'
         ? { status: 0, stdout: 'agy 1.0.0\n' }
         : { status: 0, stdout: '[{ "id": "gemini-test" }]\n' };
@@ -263,6 +263,8 @@ test('checks AGY CLI authentication with a non-interactive models probe', () => 
   });
   assert.deepEqual(auth, { present: true, type: 'agy_cli', version: 'agy 1.0.0' });
   assert.deepEqual(calls.map(({ args }) => args), [['--version'], ['models']]);
+  assert.deepEqual(calls[0].env, calls[1].env);
+  assert.deepEqual(calls[0].env, { PATH: '/deterministic', HOME: '/tmp' });
 });
 
 test('reports AGY CLI authentication as unavailable when the models probe fails', () => {
