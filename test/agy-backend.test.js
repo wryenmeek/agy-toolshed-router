@@ -249,6 +249,33 @@ test('checks agy CLI availability without relying on a developer-installed CLI',
   assert.deepEqual(cli, { present: true, version: 'agy 1.0.0', path: '/deterministic/fake-agy' });
 });
 
+test('checks AGY CLI authentication with a non-interactive models probe', () => {
+  const calls = [];
+  const auth = agy.checkAgyAuth('/deterministic/fake-agy', {
+    env: { PATH: '/deterministic', HOME: '/tmp' },
+    fsImpl: { existsSync: () => false },
+    spawnSyncImpl: (bin, args) => {
+      calls.push({ bin, args });
+      return args[0] === '--version'
+        ? { status: 0, stdout: 'agy 1.0.0\n' }
+        : { status: 0, stdout: '[{ "id": "gemini-test" }]\n' };
+    },
+  });
+  assert.deepEqual(auth, { present: true, type: 'agy_cli', version: 'agy 1.0.0' });
+  assert.deepEqual(calls.map(({ args }) => args), [['--version'], ['models']]);
+});
+
+test('reports AGY CLI authentication as unavailable when the models probe fails', () => {
+  const auth = agy.checkAgyAuth('/deterministic/fake-agy', {
+    env: { PATH: '/deterministic', HOME: '/tmp' },
+    fsImpl: { existsSync: () => false },
+    spawnSyncImpl: (bin, args) => args[0] === '--version'
+      ? { status: 0, stdout: 'agy 1.0.0\\n' }
+      : { status: 1, stdout: '', stderr: 'not authenticated\\n' },
+  });
+  assert.deepEqual(auth, { present: false, type: null });
+});
+
 test('resolves AGY model policies and attaches 1M picker aliases', () => {
   const { resolveGatewayModelPolicy, gatewayClientModelId, gatewayAdvertisedWindow } = require('../lib/runtime.js');
 
