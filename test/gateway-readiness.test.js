@@ -12,6 +12,7 @@ const { gatewayTestEnvironment, startGateway, spawnGatewayProcess } = require('.
 
 const CLI = path.join(__dirname, '..', 'bin', 'model-gateway.js');
 const gateway = require(CLI);
+const agyBackend = require('../lib/agy-backend.js');
 
 function listen(server) {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server.address().port)));
@@ -229,6 +230,78 @@ test('catalog carries provider readiness metadata for external consumers', () =>
     message: 'sign in',
   });
   assert.deepEqual(catalog.codexReadiness, catalog.providers.codex);
+});
+
+test('AGY catalog readiness requires the CLI for Claude quota rows', () => {
+  const originalCheckAgyAuth = agyBackend.checkAgyAuth;
+  const calls = [];
+  agyBackend.checkAgyAuth = (binPath, options) => {
+    calls.push({ binPath, options });
+    return { present: true, type: 'agy_cli', version: 'agy test' };
+  };
+  try {
+    const catalog = gateway.buildCatalog(['claude-agy-claude-sonnet-4-6']);
+    assert.equal(catalog.providers.agy.ready, true);
+    assert.equal(calls.at(-1).options.requireCli, true);
+  } finally {
+    agyBackend.checkAgyAuth = originalCheckAgyAuth;
+  }
+});
+
+test('subset catalog merges keep legacy AGY Claude rows CLI-gated', () => {
+  const originalCheckAgyAuth = agyBackend.checkAgyAuth;
+  const calls = [];
+  agyBackend.checkAgyAuth = (binPath, options) => {
+    calls.push({ binPath, options });
+    return { present: true, type: 'api_key' };
+  };
+  try {
+    const merged = gateway.mergeSubsetCatalog({
+      schemaVersion: gateway.CATALOG_SCHEMA_VERSION,
+      models: [{ id: 'claude-gemini-claude-sonnet-4-6', provider: 'agy' }],
+      providers: { agy: { ready: true, state: 'ready', message: 'stale' } },
+    }, {
+      schemaVersion: gateway.CATALOG_SCHEMA_VERSION,
+      models: [],
+      providers: {},
+    });
+    assert.deepEqual(merged.providers.agy, {
+      ready: false,
+      state: 'auth-missing',
+      message: 'AGY Claude quota models require an authenticated `agy` CLI.',
+    });
+    assert.equal(calls.at(-1).options.requireCli, true);
+  } finally {
+    agyBackend.checkAgyAuth = originalCheckAgyAuth;
+  }
+});
+
+test('subset catalog merges refresh readiness for preserved AGY API rows', () => {
+  const originalCheckAgyAuth = agyBackend.checkAgyAuth;
+  const calls = [];
+  agyBackend.checkAgyAuth = (binPath, options) => {
+    calls.push({ binPath, options });
+    return { present: true, type: 'api_key' };
+  };
+  try {
+    const merged = gateway.mergeSubsetCatalog({
+      schemaVersion: gateway.CATALOG_SCHEMA_VERSION,
+      models: [{ id: 'claude-agy-gemini-3.8-flash', provider: 'agy' }],
+      providers: { agy: { ready: false, state: 'auth-missing', message: 'stale' } },
+    }, {
+      schemaVersion: gateway.CATALOG_SCHEMA_VERSION,
+      models: [],
+      providers: {},
+    });
+    assert.deepEqual(merged.providers.agy, {
+      ready: true,
+      state: 'ready',
+      message: 'Antigravity auth is present (api_key).',
+    });
+    assert.equal(calls.at(-1).options.requireCli, false);
+  } finally {
+    agyBackend.checkAgyAuth = originalCheckAgyAuth;
+  }
 });
 
 test('Grok readiness reports its CLI auth state', () => {

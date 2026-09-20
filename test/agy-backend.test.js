@@ -249,6 +249,60 @@ test('checks agy CLI availability without relying on a developer-installed CLI',
   assert.deepEqual(cli, { present: true, version: 'agy 1.0.0', path: '/deterministic/fake-agy' });
 });
 
+test('checks AGY CLI authentication with a non-interactive models probe', () => {
+  const calls = [];
+  const auth = agy.checkAgyAuth('/deterministic/fake-agy', {
+    env: { PATH: '/deterministic', HOME: '/tmp' },
+    fsImpl: { existsSync: () => false },
+    spawnSyncImpl: (bin, args, options) => {
+      calls.push({ bin, args, env: options.env });
+      return args[0] === '--version'
+        ? { status: 0, stdout: 'agy 1.0.0\n' }
+        : { status: 0, stdout: '[{ "id": "gemini-test" }]\n' };
+    },
+  });
+  assert.deepEqual(auth, { present: true, type: 'agy_cli', version: 'agy 1.0.0' });
+  assert.deepEqual(calls.map(({ args }) => args), [['--version'], ['models']]);
+  assert.deepEqual(calls[0].env, calls[1].env);
+  assert.deepEqual(calls[0].env, { PATH: '/deterministic', HOME: '/tmp' });
+});
+
+test('reports AGY CLI authentication as unavailable when the models probe fails', () => {
+  const auth = agy.checkAgyAuth('/deterministic/fake-agy', {
+    env: { PATH: '/deterministic', HOME: '/tmp' },
+    fsImpl: { existsSync: () => false },
+    spawnSyncImpl: (bin, args) => args[0] === '--version'
+      ? { status: 0, stdout: 'agy 1.0.0\\n' }
+      : { status: 1, stdout: '', stderr: 'not authenticated\\n' },
+  });
+  assert.deepEqual(auth, { present: false, type: null });
+});
+
+test('prefers a healthy AGY CLI for CLI-required auth when an API key is also present', () => {
+  const auth = agy.checkAgyAuth('/deterministic/fake-agy', {
+    requireCli: true,
+    env: { PATH: '/deterministic', HOME: '/tmp', GEMINI_API_KEY: 'secret' },
+    fsImpl: { existsSync: () => false },
+    spawnSyncImpl: (bin, args) => args[0] === '--version'
+      ? { status: 0, stdout: 'agy 1.0.0\n' }
+      : { status: 0, stdout: '[{ "id": "claude-sonnet-4-6" }]\n' },
+  });
+  assert.deepEqual(auth, { present: true, type: 'agy_cli', version: 'agy 1.0.0' });
+});
+
+test('keeps API-key auth available for Gemini checks but not CLI-required checks', () => {
+  const options = {
+    env: { PATH: '/deterministic', HOME: '/tmp', GEMINI_API_KEY: 'secret' },
+    fsImpl: { existsSync: () => false },
+    spawnSyncImpl: () => ({ status: 1, stdout: '', stderr: 'missing agy\\n' }),
+  };
+  assert.deepEqual(agy.checkAgyAuth('/deterministic/fake-agy', options), { present: true, type: 'api_key' });
+  assert.deepEqual(agy.checkAgyAuth('/deterministic/fake-agy', { ...options, requireCli: true }), { present: true, type: 'api_key' });
+  assert.equal(agy.agyModelRequiresCli('claude-agy-claude-sonnet-4-6[1m]'), true);
+  assert.equal(agy.agyModelRequiresCli('claude-gemini-claude-sonnet-4-6[1m]'), true);
+  assert.equal(agy.agyModelRequiresCli('claude-agy-gemini-3.8-flash[1m]'), false);
+});
+
 test('resolves AGY model policies and attaches 1M picker aliases', () => {
   const { resolveGatewayModelPolicy, gatewayClientModelId, gatewayAdvertisedWindow } = require('../lib/runtime.js');
 
